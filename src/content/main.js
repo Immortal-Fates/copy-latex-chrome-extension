@@ -188,5 +188,31 @@
 
 	document.addEventListener('pointerdown', (e) => handleCopyGesture(e), { capture: true });
 	document.addEventListener('click', (e) => handleCopyGesture(e), { capture: true });
+	// Intercept Cmd+C / Ctrl+C: auto-copy as Markdown when selection contains math
+	
+	document.addEventListener('copy', (e) => {
+	    const selection = window.getSelection();
+	    if (!selection || selection.rangeCount === 0) return;
+
+	    const container = document.createElement('div');
+	    for (let i = 0; i < selection.rangeCount; i++) {
+        container.appendChild(selection.getRangeAt(i).cloneContents());
+	    }
+	
+	    const hasMath = container.querySelector(
+	        '.katex, [data-math], mjx-container, ' +
+	        '.MathJax_Display, .MJXc-display, .MathJax, .mjx-chtml, .MathJax_CHTML, .MathJax_MathML, ' +
+	        'img.mwe-math, img.mwe-math-fallback-image-inline, img.mwe-math-fallback-image-display'
+	    );
+	
+	    if (!hasMath) return;
+	
+	    e.preventDefault();
+	    const html = container.innerHTML;
+	    if (typeof globalThis.convertAndCopyHtml === 'function') {
+	        globalThis.convertAndCopyHtml(html);
+	    }
+	});
+
 })();
 
