@@ -4,9 +4,12 @@
 		overlay: null,
 		currentTarget: null,
 		lastMathJaxV3Latex: null,
+		mathJaxV3LatexById: Object.create(null),
 		lastCopyGestureTs: 0,
 		lastCopiedTex: null,
 	};
+	ns.state.mathJaxV3LatexById = ns.state.mathJaxV3LatexById || Object.create(null);
+	window.__mathJaxV3LatexById = window.__mathJaxV3LatexById || ns.state.mathJaxV3LatexById;
 
 	function isWikipedia() {
 		const hostname = window.location.hostname;
@@ -47,7 +50,13 @@
 		const mjxContainer = el?.closest?.('mjx-container');
 		if (!mjxContainer) return null;
 
-    // Use the last received LaTeX from the page script
+		const dataLatex = mjxContainer.getAttribute('data-copy-latex');
+		if (dataLatex && dataLatex.trim()) return dataLatex.trim();
+
+		const mjxId = mjxContainer.getAttribute('data-copy-latex-id') || mjxContainer.getAttribute('ctxtmenu_counter');
+		const latexById = window.__mathJaxV3LatexById || ns.state.mathJaxV3LatexById;
+		if (mjxId && latexById?.[mjxId]) return latexById[mjxId];
+
 		if (ns.state.lastMathJaxV3Latex) {
 			return ns.state.lastMathJaxV3Latex;
 		}
@@ -150,4 +159,3 @@
 		findMathJaxTex,
 	};
 })();
-

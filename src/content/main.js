@@ -4,9 +4,12 @@
 		overlay: null,
 		currentTarget: null,
 		lastMathJaxV3Latex: null,
+		mathJaxV3LatexById: Object.create(null),
 		lastCopyGestureTs: 0,
 		lastCopiedTex: null,
 	};
+	ns.state.mathJaxV3LatexById = ns.state.mathJaxV3LatexById || Object.create(null);
+	window.__mathJaxV3LatexById = window.__mathJaxV3LatexById || ns.state.mathJaxV3LatexById;
 
 	async function injectMathJaxPageScript() {
 		try {
@@ -26,7 +29,10 @@
 		if (event.source !== window) return;
 		if (event.data && event.data.type === 'CopyLaTeX_MathJaxV3') {
 			ns.state.lastMathJaxV3Latex = event.data.latex;
-			// Keep compatibility with content/selection-to-markdown.js
+			if (event.data.mjxId) {
+				ns.state.mathJaxV3LatexById[event.data.mjxId] = event.data.latex;
+				window.__mathJaxV3LatexById[event.data.mjxId] = event.data.latex;
+			}
 			window.__lastMathJaxV3Latex = event.data.latex;
 		}
 	});
@@ -194,6 +200,8 @@
 	    const selection = window.getSelection();
 	    if (!selection || selection.rangeCount === 0) return;
 
+	    document.dispatchEvent(new CustomEvent('CopyLaTeX_HydrateMathJaxV3'));
+
 	    const container = document.createElement('div');
 	    for (let i = 0; i < selection.rangeCount; i++) {
         container.appendChild(selection.getRangeAt(i).cloneContents());
@@ -215,4 +223,3 @@
 	});
 
 })();
-

@@ -167,9 +167,12 @@
 
     // MathJax v3/v4
     if (el.tagName === 'MJX-CONTAINER') {
-      // Try global variable set by page script
-      const globalLatex = window.__lastMathJaxV3Latex;
-      if (globalLatex) return globalLatex;
+      const dataLatex = el.getAttribute('data-copy-latex');
+      if (dataLatex && dataLatex.trim()) return dataLatex.trim();
+
+      const mjxId = el.getAttribute('data-copy-latex-id') || el.getAttribute('ctxtmenu_counter');
+      const latexById = window.__mathJaxV3LatexById;
+      if (mjxId && latexById?.[mjxId]) return latexById[mjxId];
 
       // Fallback to script element
       const sibling = el.nextElementSibling;

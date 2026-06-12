@@ -104,6 +104,8 @@ browser.contextMenus.onClicked.addListener(async (info, tab) => {
             return { ok: false, error: 'No selection' };
           }
 
+          document.dispatchEvent(new CustomEvent('CopyLaTeX_HydrateMathJaxV3'));
+
           const container = document.createElement('div');
           for (let i = 0; i < selection.rangeCount; i++) {
             container.appendChild(selection.getRangeAt(i).cloneContents());
