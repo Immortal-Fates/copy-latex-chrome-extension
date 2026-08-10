@@ -37,58 +37,74 @@
 		}
 	});
 
-	function showOverlayForTarget(target, tex) {
+	function showOverlayForTarget(target, tex, mode = 'inline') {
+		if (ns.state.currentTarget === target && ns.state.overlay?.dataset.tex === tex) return;
+		if (ns.state.currentTarget && ns.state.currentTarget !== target) {
+			ns.state.currentTarget.classList.remove('hoverlatex-hover');
+		}
 		ns.state.currentTarget = target;
 		target.classList.add('hoverlatex-hover');
-		ns.output.showOverlay(target, tex);
+		ns.output.showOverlay(target, tex, mode);
 	}
 
-	document.addEventListener('mouseover', (e) => {
+	function handleHover(e) {
 		if (ns.detect.isWikipedia()) {
 			const wikipediaTex = ns.detect.findWikipediaTex(e.target);
 			if (wikipediaTex) {
-				showOverlayForTarget(e.target, wikipediaTex);
+				showOverlayForTarget(e.target, wikipediaTex, ns.detect.getDisplayMode(e.target));
 				return;
 			}
 		}
 
-		const katex = ns.detect.findKaTeXElementFromEventTarget(e.target);
+		const katex = ns.detect.findKaTeXElementFromEventTarget(e);
 		if (katex) {
 			const tex = ns.detect.findAnnotationTex(katex);
 			if (tex) {
-				showOverlayForTarget(katex, tex);
+				showOverlayForTarget(katex, tex, ns.detect.getDisplayMode(katex));
 				return;
 			}
 		}
 
-		const dataMathEl = e.target.closest?.('[data-math]');
+		const mathCodeEl = ns.detect.findMathCodeElementFromEventTarget(e);
+		if (mathCodeEl) {
+			const tex = ns.detect.findMathCodeTex(mathCodeEl);
+			if (tex) {
+				showOverlayForTarget(mathCodeEl, tex, ns.detect.getDisplayMode(mathCodeEl));
+				return;
+			}
+		}
+
+		const dataMathEl = ns.detect.findElementFromEvent(e, '[data-math]');
 		if (dataMathEl) {
 			const tex = dataMathEl.getAttribute('data-math');
 			if (tex && tex.trim()) {
-				showOverlayForTarget(dataMathEl, tex.trim());
+				showOverlayForTarget(dataMathEl, tex.trim(), ns.detect.getDisplayMode(dataMathEl));
 				return;
 			}
 		}
 
-		const mjxContainer = e.target.closest?.('mjx-container');
+		const mjxContainer = ns.detect.findElementFromEvent(e, 'mjx-container');
 		if (mjxContainer) {
 			const tex = ns.detect.findMathJaxV3Tex(mjxContainer);
 			if (tex) {
-				showOverlayForTarget(mjxContainer, tex);
+				showOverlayForTarget(mjxContainer, tex, ns.detect.getDisplayMode(mjxContainer));
 				return;
 			}
 		}
 
-		const mathJaxDisplay = e.target.closest?.('.MathJax_Display, .MJXc-display');
-		const mathJaxInline = e.target.closest?.('.MathJax, .mjx-chtml, .MathJax_CHTML, .MathJax_MathML');
+		const mathJaxDisplay = ns.detect.findElementFromEvent(e, '.MathJax_Display, .MJXc-display');
+		const mathJaxInline = ns.detect.findElementFromEvent(e, '.MathJax, .mjx-chtml, .MathJax_CHTML, .MathJax_MathML');
 		if (mathJaxDisplay || mathJaxInline) {
 			const mathElement = mathJaxDisplay || mathJaxInline;
 			const tex = ns.detect.findMathJaxTex(mathElement);
 			if (tex) {
-				showOverlayForTarget(mathElement, tex);
+				showOverlayForTarget(mathElement, tex, ns.detect.getDisplayMode(mathElement));
 			}
 		}
-	});
+	}
+
+	document.addEventListener('mouseover', handleHover, { capture: true });
+	document.addEventListener('mousemove', handleHover, { capture: true });
 
 	document.addEventListener('mouseout', (e) => {
 		const currentTarget = ns.state.currentTarget;
@@ -140,19 +156,19 @@
 		const overlay = ns.state.overlay;
 		if (overlay && overlay.classList.contains('visible') && e.target?.closest?.('.hoverlatex-overlay')) {
 			const tex = overlay.dataset.tex;
-			if (tex && tex.trim()) ns.output.copyLatex(tex.trim());
+			if (tex && tex.trim()) ns.output.copyLatex(tex.trim(), overlay.dataset.mode || 'inline');
 			return;
 		}
 
 		if (ns.detect.isWikipedia()) {
 			const wikipediaTex = ns.detect.findWikipediaTex(e.target);
 			if (wikipediaTex) {
-				ns.output.copyLatex(wikipediaTex);
+				ns.output.copyLatex(wikipediaTex, ns.detect.getDisplayMode(e.target));
 				return;
 			}
 		}
 
-		const katex = ns.detect.findKaTeXElementFromEventTarget(e.target);
+		const katex = ns.detect.findKaTeXElementFromEventTarget(e);
 		if (katex) {
 			const tex = ns.detect.findAnnotationTex(katex);
 			if (tex) {
@@ -160,35 +176,44 @@
 				if (ns.state.lastCopiedTex === tex && now - ns.state.lastCopyGestureTs < 700) return;
 				ns.state.lastCopyGestureTs = now;
 				ns.state.lastCopiedTex = tex;
-				ns.output.copyLatex(tex);
+				ns.output.copyLatex(tex, ns.detect.getDisplayMode(katex));
 				return;
 			}
 		}
 
-		const dataMathEl = e.target.closest?.('[data-math]');
+		const mathCodeEl = ns.detect.findMathCodeElementFromEventTarget(e);
+		if (mathCodeEl) {
+			const tex = ns.detect.findMathCodeTex(mathCodeEl);
+			if (tex) {
+				ns.output.copyLatex(tex, ns.detect.getDisplayMode(mathCodeEl));
+				return;
+			}
+		}
+
+		const dataMathEl = ns.detect.findElementFromEvent(e, '[data-math]');
 		if (dataMathEl) {
 			const tex = dataMathEl.getAttribute('data-math');
 			if (tex) {
-				ns.output.copyLatex(tex);
+				ns.output.copyLatex(tex, ns.detect.getDisplayMode(dataMathEl));
 				return;
 			}
 		}
 
-		const mjxContainer = e.target.closest?.('mjx-container');
+		const mjxContainer = ns.detect.findElementFromEvent(e, 'mjx-container');
 		if (mjxContainer) {
 			const tex = ns.detect.findMathJaxV3Tex(mjxContainer);
 			if (tex) {
-				ns.output.copyLatex(tex);
+				ns.output.copyLatex(tex, ns.detect.getDisplayMode(mjxContainer));
 				return;
 			}
 		}
 
-		const mathJaxDisplay = e.target.closest?.('.MathJax_Display, .MJXc-display');
-		const mathJaxInline = e.target.closest?.('.MathJax, .mjx-chtml, .MathJax_CHTML, .MathJax_MathML');
+		const mathJaxDisplay = ns.detect.findElementFromEvent(e, '.MathJax_Display, .MJXc-display');
+		const mathJaxInline = ns.detect.findElementFromEvent(e, '.MathJax, .mjx-chtml, .MathJax_CHTML, .MathJax_MathML');
 		if (mathJaxDisplay || mathJaxInline) {
 			const mathElement = mathJaxDisplay || mathJaxInline;
 			const tex = ns.detect.findMathJaxTex(mathElement);
-			if (tex) ns.output.copyLatex(tex);
+			if (tex) ns.output.copyLatex(tex, ns.detect.getDisplayMode(mathElement));
 		}
 	}
 
@@ -215,10 +240,13 @@
 	
 	    if (!hasMath) return;
 	
-	    e.preventDefault();
 	    const html = container.innerHTML;
-	    if (typeof globalThis.convertAndCopyHtml === 'function') {
-	        globalThis.convertAndCopyHtml(html);
+	    if (typeof globalThis.convertHtmlToMarkdownText === 'function') {
+	        const markdown = globalThis.convertHtmlToMarkdownText(html);
+	        if (markdown && e.clipboardData) {
+	            e.preventDefault();
+	            e.clipboardData.setData('text/plain', markdown);
+	        }
 	    }
 	});
 

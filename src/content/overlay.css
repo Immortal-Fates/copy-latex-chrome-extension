@@ -39,7 +39,8 @@
 	opacity: 0;
 	transform: translateY(-4px);
 	transition: opacity 0.15s ease-in-out, transform 0.15s ease-in-out;
-	pointer-events: none; /* does not prevent clicks */
+	pointer-events: auto;
+	cursor: pointer;
 }
 
 .hoverlatex-overlay.visible {
@@ -113,4 +114,3 @@ img.mwe-math-fallback-image-display.hoverlatex-hover {
 		color: #dcfce7;
 	}
 }
-

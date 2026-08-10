@@ -92,16 +92,181 @@
 			katexEl.getAttribute('aria-label');
 		if (dataLatex && dataLatex.trim()) return dataLatex.trim();
 
+		return extractRenderedKaTeXTex(katexEl);
+	}
+
+	function escapeLatexText(text) {
+		return text.replace(/[\\{}$&#_%]/g, (char) => `\\${char}`);
+	}
+
+	function normalizeLatexText(text) {
+		return text.replace(/\u200b/g, '').replace(/\s+/g, ' ').trim();
+	}
+
+	function extractRenderedKaTeXTex(katexEl) {
+		const html = katexEl.querySelector('.katex-html') || katexEl;
+		const tex = extractKaTeXChildren(html);
+		return normalizeLatexText(tex) || null;
+	}
+
+	function extractKaTeXChildren(el) {
+		let output = '';
+		for (const child of el.childNodes) {
+			if (child.nodeType === Node.TEXT_NODE) {
+				output += child.textContent || '';
+				continue;
+			}
+			if (!(child instanceof Element)) continue;
+			if (child.classList.contains('strut') || child.classList.contains('pstrut')) continue;
+
+			if (child.classList.contains('msupsub')) {
+				const script = extractKaTeXScript(child);
+				if (script) output += `^{${script}}`;
+				continue;
+			}
+
+			output += extractKaTeXElement(child);
+		}
+		return output;
+	}
+
+	function extractKaTeXScript(el) {
+		const sizing = el.querySelector('.sizing');
+		return sizing ? extractKaTeXChildren(sizing) : extractKaTeXChildren(el);
+	}
+
+	function extractKaTeXElement(el) {
+		if (el.classList.contains('mspace')) {
+			const margin = el.style?.marginRight || '';
+			if (margin.includes('2em')) return '\\quad ';
+			if (margin) return ' ';
+			return '';
+		}
+
+		if (el.classList.contains('mathbb')) return `\\mathbb{${extractKaTeXChildren(el)}}`;
+		if (el.classList.contains('text')) return `\\text{${escapeLatexText(el.textContent || '')}}`;
+		if (el.classList.contains('sqrt')) return `\\sqrt{${extractKaTeXChildren(el)}}`;
+
+		return extractKaTeXChildren(el);
+	}
+
+	function getEventElements(eventOrTarget) {
+		if (eventOrTarget?.composedPath) {
+			return eventOrTarget.composedPath().filter((node) => node instanceof Element);
+		}
+		return eventOrTarget instanceof Element ? [eventOrTarget] : [];
+	}
+
+	function getElementsAtPoint(eventOrTarget) {
+		if (
+			typeof eventOrTarget?.clientX !== 'number' ||
+			typeof eventOrTarget?.clientY !== 'number' ||
+			typeof document.elementsFromPoint !== 'function'
+		) {
+			return [];
+		}
+		return document.elementsFromPoint(eventOrTarget.clientX, eventOrTarget.clientY);
+	}
+
+	function rectContainsPoint(rect, x, y) {
+		return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+	}
+
+	function findDescendantAtPoint(root, selector, eventOrTarget) {
+		if (
+			!(root instanceof Element) ||
+			typeof eventOrTarget?.clientX !== 'number' ||
+			typeof eventOrTarget?.clientY !== 'number'
+		) {
+			return null;
+		}
+
+		const candidates = root.querySelectorAll?.(selector) || [];
+		for (const candidate of candidates) {
+			if (rectContainsPoint(candidate.getBoundingClientRect(), eventOrTarget.clientX, eventOrTarget.clientY)) {
+				return candidate;
+			}
+		}
 		return null;
 	}
 
-	function findKaTeXElementFromEventTarget(target) {
-		if (!(target instanceof Element)) return null;
+	function findDocumentElementAtPoint(selector, eventOrTarget) {
+		if (
+			typeof eventOrTarget?.clientX !== 'number' ||
+			typeof eventOrTarget?.clientY !== 'number'
+		) {
+			return null;
+		}
 
-		// Only treat the hover/click as "KaTeX" when the pointer is actually inside
-		// a KaTeX-rendered subtree. Avoid scanning for any descendant `.katex`, because
-		// that makes the hit area too broad (e.g. entire lines containing inline math).
-		return target.closest?.('.katex') || null;
+		const candidates = document.querySelectorAll(selector);
+		let best = null;
+		let bestArea = Infinity;
+
+		for (const candidate of candidates) {
+			const rect = candidate.getBoundingClientRect();
+			if (!rect.width || !rect.height) continue;
+			if (!rectContainsPoint(rect, eventOrTarget.clientX, eventOrTarget.clientY)) continue;
+
+			const area = rect.width * rect.height;
+			if (area < bestArea) {
+				best = candidate;
+				bestArea = area;
+			}
+		}
+
+		return best;
+	}
+
+	function findElementFromEvent(eventOrTarget, selector) {
+		const elements = [...getEventElements(eventOrTarget), ...getElementsAtPoint(eventOrTarget)];
+		for (const el of elements) {
+			if (el.matches?.(selector)) return el;
+			const closest = el.closest?.(selector);
+			if (closest) return closest;
+			const descendant = findDescendantAtPoint(el, selector, eventOrTarget);
+			if (descendant) return descendant;
+		}
+		return findDocumentElementAtPoint(selector, eventOrTarget);
+	}
+
+	function findKaTeXElementFromEventTarget(target) {
+		const pathK = findElementFromEvent(target, '.katex');
+		if (pathK) return pathK;
+
+		const katexDisplay = findElementFromEvent(target, '.katex-display');
+		return katexDisplay?.querySelector?.('.katex') || null;
+	}
+
+	function findMathCodeElementFromEventTarget(target) {
+		return findElementFromEvent(
+			target,
+			'code.language-math, .math-inline, .math-display, [data-language="math"], [data-code-language="math"]'
+		);
+	}
+
+	function findMathCodeTex(el) {
+		const mathEl = findMathCodeElementFromEventTarget(el);
+		const tex = mathEl?.textContent?.trim();
+		return tex || null;
+	}
+
+	function getDisplayMode(el) {
+		if (!el) return 'inline';
+		if (el.classList?.contains('mwe-math-fallback-image-display')) return 'display';
+		if (el.classList?.contains('katex-display')) return 'display';
+		if (el.closest?.('.katex-display')) return 'display';
+		if (el.tagName === 'MJX-CONTAINER' && el.hasAttribute('display')) return 'display';
+		if (el.classList?.contains('MathJax_Display') || el.classList?.contains('MJXc-display')) return 'display';
+		if (el.classList?.contains('math-display')) return 'display';
+		if (el.hasAttribute?.('data-math') && el.tagName === 'DIV') return 'display';
+		const parent = el.parentElement;
+		if (parent) {
+			const parentStyle = window.getComputedStyle(parent);
+			if (parentStyle.display === 'block' || parentStyle.display === 'flex' || parentStyle.textAlign === 'center') {
+				return 'display';
+			}
+		}
+		return 'inline';
 	}
 
 	function findMathJaxTex(el) {
@@ -156,6 +321,10 @@
 		findMathJaxV3Tex,
 		findAnnotationTex,
 		findKaTeXElementFromEventTarget,
+		findMathCodeElementFromEventTarget,
+		findMathCodeTex,
+		findElementFromEvent,
+		getDisplayMode,
 		findMathJaxTex,
 	};
 })();

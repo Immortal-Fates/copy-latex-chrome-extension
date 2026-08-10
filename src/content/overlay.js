@@ -97,7 +97,7 @@
 		return overlay;
 	}
 
-	function showOverlay(target, tex) {
+	function showOverlay(target, tex, mode = 'inline') {
 		let overlay = getOverlay();
 		if (!overlay) {
       // console.log('[Copy LaTeX] showOverlay: overlay does not exist, creating...');
@@ -109,6 +109,7 @@
 		// Ensure theme is applied synchronously to avoid flicker.
 		setOverlayThemeClass();
 		overlay.dataset.tex = tex;
+		overlay.dataset.mode = mode;
 
 		const rect = target.getBoundingClientRect();
 		const overlayWidth = overlay.offsetWidth;

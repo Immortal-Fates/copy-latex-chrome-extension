@@ -23,8 +23,54 @@
 		}
 	}
 
+	async function copyTextToClipboard(text) {
+		try {
+			await navigator.clipboard.writeText(text);
+			return true;
+		} catch (clipboardError) {
+			const textBox = document.createElement('textarea');
+			textBox.value = text;
+			textBox.setAttribute('readonly', '');
+			textBox.style.position = 'fixed';
+			textBox.style.top = '-9999px';
+			textBox.style.left = '-9999px';
+			document.body.appendChild(textBox);
+
+			try {
+				textBox.focus();
+				textBox.select();
+				if (document.execCommand('copy')) return true;
+				console.error('[Copy LaTeX] execCommand copy failed:', clipboardError);
+				return false;
+			} catch (execCommandError) {
+				console.error('[Copy LaTeX] Clipboard error:', execCommandError);
+				return false;
+			} finally {
+				textBox.remove();
+			}
+		}
+	}
+
+	async function getOutputFormat() {
+		try {
+			const result = await browser.storage.local.get('outputFormat');
+			return result.outputFormat || 'latex';
+		} catch (error) {
+			const message = error && typeof error === 'object' && 'message' in error ? String(error.message) : '';
+			if (!message.includes('Extension context invalidated')) {
+				console.warn('[Copy LaTeX] Error reading outputFormat:', error);
+			}
+			return 'latex';
+		}
+	}
+
+	function wrapLatexOutput(tex, mode = 'inline') {
+		const trimmed = tex.trim();
+		return mode === 'display' ? `$$\n${trimmed}\n$$` : `$${trimmed}$`;
+	}
+
   // Copy LaTeX or Typst code based on user preference
-	async function copyLatex(tex) {
+	async function copyLatex(tex, mode = 'inline') {
 		try {
 			let overlay = ns.state.overlay;
 			if (!overlay && typeof ns.output?.createOverlay === 'function') {
@@ -32,14 +78,14 @@
 			}
 
       // Get user's format preference
-			const result = await browser.storage.local.get('outputFormat');
-			const format = result.outputFormat || 'latex';
+			const format = await getOutputFormat();
 
 			// Convert to Typst if selected
-      const outputText = format === 'typst' ? latexToTypst(tex) : tex;
+      const outputText = format === 'typst' ? latexToTypst(tex) : wrapLatexOutput(tex, mode);
 
       // Copy to clipboard
-			await navigator.clipboard.writeText(outputText);
+			const copied = await copyTextToClipboard(outputText);
+			if (!copied) return;
 
       // Show success 'Copied!' feedback on the overlay
 			overlay.classList.add('copied');
@@ -104,7 +150,7 @@
 	ns.output = ns.output || {};
 	Object.assign(ns.output, {
 		latexToTypst,
+		wrapLatexOutput,
 		copyLatex,
 	});
 })();
-

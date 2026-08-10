@@ -19,8 +19,12 @@
     }
   }
 
+  function convertHtmlToMarkdownText(html) {
+    return convertHtmlToLatexMarkdown(html);
+  }
+
   // Convert HTML to Markdown
-  async function convertHtmlToLatexMarkdown(html) {
+  function convertHtmlToLatexMarkdown(html) {
     const container = document.createElement('div');
     // innerHTML usage here is safe: the 'html' parameter comes from trusted sources
     // (user selection on the page), and we immediately process it in a controlled way
@@ -55,7 +59,7 @@
       // Create a marker that Turndown will preserve, containing the LaTeX code
       const marker = document.createElement('span');
       marker.className = 'latex-marker';
-      marker.textContent = `${delimiter}${latex}${delimiter}`;
+      marker.textContent = latex;
       marker.setAttribute('data-latex-mode', displayMode);
 
       el.replaceWith(marker);
@@ -101,15 +105,9 @@
         );
       },
       replacement: (content, node) => {
-        // // Check if it's display mode ($$...$$) or inline ($...$)
-        // const isDisplay = node.getAttribute('data-latex-mode') === 'display';
-        // const latex = node.textContent || '';
-        
-        // // Block equations with blank lines before and after them
-        // return isDisplay ? `\n\n${latex}\n\n` : latex;
-
-        // New (simpler) approach: newlines handled in the markdown output via regex
-        return node.textContent || '';
+        const isDisplay = node.getAttribute('data-latex-mode') === 'display';
+        const latex = node.textContent || '';
+        return isDisplay ? `\n\n$$\n${latex}\n$$\n\n` : `$${latex}$`;
       },
     });
 
@@ -121,9 +119,9 @@
     const htmlString = container.innerHTML;
     let markdown = turndownService.turndown(htmlString);
 
-    // To ensure exactly one blank line around block equations:
-    // First we add spacing around all block equations ($$ as delimiter)
-    markdown = markdown.replace(/(\$\$[\s\S]+?\$\$)/g, '\n\n$1\n\n');
+    markdown = markdown.replace(/\$\$\s*([\s\S]*?)\s*\$\$/g, (_, latex) => {
+      return `\n\n$$\n${latex.trim()}\n$$\n\n`;
+    });
     // Normalize (convert lines with only whitespaces to empty lines)
     markdown = markdown.replace(/^[ \t]+$/gm, '');
     // Then collapse 3 or more newlines to 2 newlines
@@ -151,12 +149,13 @@
       const ann = el.querySelector('.katex-mathml annotation[encoding="application/x-tex"]');
       if (ann && ann.textContent) return ann.textContent.trim();
 
-      return (
+      const dataLatex =
         el.getAttribute('data-tex') ||
         el.getAttribute('data-latex') ||
-        el.getAttribute('aria-label') ||
-        null
-      );
+        el.getAttribute('aria-label');
+      if (dataLatex && dataLatex.trim()) return dataLatex.trim();
+
+      return extractRenderedKaTeXTex(el);
     }
 
     // Gemini (data-math attribute)
@@ -197,6 +196,61 @@
     return null;
   }
 
+  function escapeLatexText(text) {
+    return text.replace(/[\\{}$&#_%]/g, (char) => `\\${char}`);
+  }
+
+  function normalizeLatexText(text) {
+    return text.replace(/\u200b/g, '').replace(/\s+/g, ' ').trim();
+  }
+
+  function extractRenderedKaTeXTex(katexEl) {
+    const html = katexEl.querySelector('.katex-html') || katexEl;
+    const tex = extractKaTeXChildren(html);
+    return normalizeLatexText(tex) || null;
+  }
+
+  function extractKaTeXChildren(el) {
+    let output = '';
+    for (const child of el.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        output += child.textContent || '';
+        continue;
+      }
+      if (!(child instanceof Element)) continue;
+      if (child.classList.contains('strut') || child.classList.contains('pstrut')) continue;
+
+      if (child.classList.contains('msupsub')) {
+        const script = extractKaTeXScript(child);
+        if (script) output += `^{${script}}`;
+        continue;
+      }
+
+      output += extractKaTeXElement(child);
+    }
+    return output;
+  }
+
+  function extractKaTeXScript(el) {
+    const sizing = el.querySelector('.sizing');
+    return sizing ? extractKaTeXChildren(sizing) : extractKaTeXChildren(el);
+  }
+
+  function extractKaTeXElement(el) {
+    if (el.classList.contains('mspace')) {
+      const margin = el.style?.marginRight || '';
+      if (margin.includes('2em')) return '\\quad ';
+      if (margin) return ' ';
+      return '';
+    }
+
+    if (el.classList.contains('mathbb')) return `\\mathbb{${extractKaTeXChildren(el)}}`;
+    if (el.classList.contains('text')) return `\\text{${escapeLatexText(el.textContent || '')}}`;
+    if (el.classList.contains('sqrt')) return `\\sqrt{${extractKaTeXChildren(el)}}`;
+
+    return extractKaTeXChildren(el);
+  }
+
   // Determine if math should be inline or display mode
   function getDisplayMode(el) {
     // Wikipedia
@@ -217,7 +271,7 @@
       if (el.parentElement?.classList.contains('katex-display')) return 'display';
       if (el.parentElement) {
         const style = window.getComputedStyle(el.parentElement);
-        if (style.display === 'block') return 'display';
+        if (style.display === 'block' || style.display === 'flex' || style.textAlign === 'center') return 'display';
       }
     }
 
@@ -302,4 +356,5 @@
 
   // Expose only the single entrypoint
   globalThis.convertAndCopyHtml = convertAndCopyHtml;
+  globalThis.convertHtmlToMarkdownText = convertHtmlToMarkdownText;
 })();
