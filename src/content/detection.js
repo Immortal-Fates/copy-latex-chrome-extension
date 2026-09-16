@@ -92,62 +92,7 @@
 			katexEl.getAttribute('aria-label');
 		if (dataLatex && dataLatex.trim()) return dataLatex.trim();
 
-		return extractRenderedKaTeXTex(katexEl);
-	}
-
-	function escapeLatexText(text) {
-		return text.replace(/[\\{}$&#_%]/g, (char) => `\\${char}`);
-	}
-
-	function normalizeLatexText(text) {
-		return text.replace(/\u200b/g, '').replace(/\s+/g, ' ').trim();
-	}
-
-	function extractRenderedKaTeXTex(katexEl) {
-		const html = katexEl.querySelector('.katex-html') || katexEl;
-		const tex = extractKaTeXChildren(html);
-		return normalizeLatexText(tex) || null;
-	}
-
-	function extractKaTeXChildren(el) {
-		let output = '';
-		for (const child of el.childNodes) {
-			if (child.nodeType === Node.TEXT_NODE) {
-				output += child.textContent || '';
-				continue;
-			}
-			if (!(child instanceof Element)) continue;
-			if (child.classList.contains('strut') || child.classList.contains('pstrut')) continue;
-
-			if (child.classList.contains('msupsub')) {
-				const script = extractKaTeXScript(child);
-				if (script) output += `^{${script}}`;
-				continue;
-			}
-
-			output += extractKaTeXElement(child);
-		}
-		return output;
-	}
-
-	function extractKaTeXScript(el) {
-		const sizing = el.querySelector('.sizing');
-		return sizing ? extractKaTeXChildren(sizing) : extractKaTeXChildren(el);
-	}
-
-	function extractKaTeXElement(el) {
-		if (el.classList.contains('mspace')) {
-			const margin = el.style?.marginRight || '';
-			if (margin.includes('2em')) return '\\quad ';
-			if (margin) return ' ';
-			return '';
-		}
-
-		if (el.classList.contains('mathbb')) return `\\mathbb{${extractKaTeXChildren(el)}}`;
-		if (el.classList.contains('text')) return `\\text{${escapeLatexText(el.textContent || '')}}`;
-		if (el.classList.contains('sqrt')) return `\\sqrt{${extractKaTeXChildren(el)}}`;
-
-		return extractKaTeXChildren(el);
+		return ns.renderedKaTeX?.extractRenderedKaTeXTex(katexEl) || null;
 	}
 
 	function getEventElements(eventOrTarget) {
@@ -190,33 +135,6 @@
 		return null;
 	}
 
-	function findDocumentElementAtPoint(selector, eventOrTarget) {
-		if (
-			typeof eventOrTarget?.clientX !== 'number' ||
-			typeof eventOrTarget?.clientY !== 'number'
-		) {
-			return null;
-		}
-
-		const candidates = document.querySelectorAll(selector);
-		let best = null;
-		let bestArea = Infinity;
-
-		for (const candidate of candidates) {
-			const rect = candidate.getBoundingClientRect();
-			if (!rect.width || !rect.height) continue;
-			if (!rectContainsPoint(rect, eventOrTarget.clientX, eventOrTarget.clientY)) continue;
-
-			const area = rect.width * rect.height;
-			if (area < bestArea) {
-				best = candidate;
-				bestArea = area;
-			}
-		}
-
-		return best;
-	}
-
 	function findElementFromEvent(eventOrTarget, selector) {
 		const elements = [...getEventElements(eventOrTarget), ...getElementsAtPoint(eventOrTarget)];
 		for (const el of elements) {
@@ -226,7 +144,7 @@
 			const descendant = findDescendantAtPoint(el, selector, eventOrTarget);
 			if (descendant) return descendant;
 		}
-		return findDocumentElementAtPoint(selector, eventOrTarget);
+		return null;
 	}
 
 	function findKaTeXElementFromEventTarget(target) {

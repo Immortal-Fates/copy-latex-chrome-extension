@@ -64,9 +64,29 @@
 		}
 	}
 
+	function normalizeLatexInput(tex, mode = 'inline') {
+		let normalizedTex = String(tex || '').trim();
+		let normalizedMode = mode;
+		const delimiters = [
+			{ pattern: /^\\\(([\s\S]*)\\\)$/, mode: 'inline' },
+			{ pattern: /^\\\[([\s\S]*)\\\]$/, mode: 'display' },
+			{ pattern: /^\$\$([\s\S]*)\$\$$/, mode: 'display' },
+			{ pattern: /^\$([\s\S]*)\$$/, mode: 'inline' },
+		];
+
+		for (let depth = 0; depth < 2; depth++) {
+			const delimiter = delimiters.find(({ pattern }) => pattern.test(normalizedTex));
+			if (!delimiter) break;
+			normalizedTex = normalizedTex.match(delimiter.pattern)[1].trim();
+			normalizedMode = delimiter.mode;
+		}
+
+		return { tex: normalizedTex, mode: normalizedMode };
+	}
+
 	function wrapLatexOutput(tex, mode = 'inline') {
-		const trimmed = tex.trim();
-		return mode === 'display' ? `$$\n${trimmed}\n$$` : `$${trimmed}$`;
+		const normalized = normalizeLatexInput(tex, mode);
+		return normalized.mode === 'display' ? `$$\n${normalized.tex}\n$$` : `$${normalized.tex}$`;
 	}
 
   // Copy LaTeX or Typst code based on user preference
@@ -150,6 +170,7 @@
 	ns.output = ns.output || {};
 	Object.assign(ns.output, {
 		latexToTypst,
+		normalizeLatexInput,
 		wrapLatexOutput,
 		copyLatex,
 	});

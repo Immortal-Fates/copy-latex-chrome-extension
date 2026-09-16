@@ -56,22 +56,9 @@
 		containers.forEach((mjx) => publishLatexForContainer(mjx));
 	}
 
-	publishAllContainers(document);
-
 	document.addEventListener('CopyLaTeX_HydrateMathJaxV3', function() {
 		publishAllContainers(document);
 	}, true);
-
-	const observer = new MutationObserver((mutations) => {
-		mutations.forEach((mutation) => {
-			mutation.addedNodes.forEach((node) => {
-				if (!(node instanceof Element)) return;
-				if (node.matches('mjx-container')) publishLatexForContainer(node);
-				publishAllContainers(node);
-			});
-		});
-	});
-	observer.observe(document.documentElement, { childList: true, subtree: true });
 
 	document.addEventListener('mouseover', function(e) {
 		const mjx = e.target.closest('mjx-container');

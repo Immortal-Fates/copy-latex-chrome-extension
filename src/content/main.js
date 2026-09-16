@@ -104,7 +104,6 @@
 	}
 
 	document.addEventListener('mouseover', handleHover, { capture: true });
-	document.addEventListener('mousemove', handleHover, { capture: true });
 
 	document.addEventListener('mouseout', (e) => {
 		const currentTarget = ns.state.currentTarget;
@@ -221,7 +220,7 @@
 	document.addEventListener('click', (e) => handleCopyGesture(e), { capture: true });
 	// Intercept Cmd+C / Ctrl+C: auto-copy as Markdown when selection contains math
 	
-	document.addEventListener('copy', (e) => {
+	window.addEventListener('copy', (e) => {
 	    const selection = window.getSelection();
 	    if (!selection || selection.rangeCount === 0) return;
 
@@ -233,12 +232,14 @@
 	    }
 	
 	    const hasMath = container.querySelector(
-	        '.katex, [data-math], mjx-container, ' +
+	        '.katex, .katex-mathml, .katex-html, [data-math], mjx-container, math, ' +
 	        '.MathJax_Display, .MJXc-display, .MathJax, .mjx-chtml, .MathJax_CHTML, .MathJax_MathML, ' +
 	        'img.mwe-math, img.mwe-math-fallback-image-inline, img.mwe-math-fallback-image-display'
 	    );
+	    const hasTextLatex = typeof globalThis.containsTextLatex === 'function' &&
+	        globalThis.containsTextLatex(container);
 	
-	    if (!hasMath) return;
+	    if (!hasMath && !hasTextLatex) return;
 	
 	    const html = container.innerHTML;
 	    if (typeof globalThis.convertHtmlToMarkdownText === 'function') {
@@ -246,8 +247,9 @@
 	        if (markdown && e.clipboardData) {
 	            e.preventDefault();
 	            e.clipboardData.setData('text/plain', markdown);
+	            e.stopImmediatePropagation();
 	        }
 	    }
-	});
+	}, { capture: true });
 
 })();

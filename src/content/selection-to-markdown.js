@@ -23,6 +23,150 @@
     return convertHtmlToLatexMarkdown(html);
   }
 
+  const textLatexPattern = /\\\[([\s\S]*?)\\\]|\\\(([\s\S]*?)\\\)/g;
+  const blockTags = new Set([
+    'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DIV', 'DL', 'FIELDSET', 'FIGCAPTION',
+    'FIGURE', 'FOOTER', 'FORM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HEADER', 'HR',
+    'LI', 'MAIN', 'NAV', 'OL', 'P', 'PRE', 'SECTION', 'TABLE', 'TBODY', 'TD', 'TFOOT',
+    'TH', 'THEAD', 'TR', 'UL'
+  ]);
+  const textLatexBoundaryTags = new Set(['BR', 'WBR']);
+
+  function getTextLatexScope(node, root) {
+    let scope = node.parentElement;
+    while (scope && scope !== root && !blockTags.has(scope.tagName)) {
+      scope = scope.parentElement;
+    }
+    return scope || root;
+  }
+
+  function isTextLatexNode(node) {
+    const parent = node.parentElement;
+    return parent && !parent.closest('code, pre, script, style, textarea, .latex-marker');
+  }
+
+  function resolveTextOffset(nodes, offset, isEnd) {
+    let cursor = 0;
+    for (const node of nodes) {
+      const length = (node.textContent || '').length;
+      if (offset < cursor + length || (isEnd && offset === cursor + length)) {
+        return { node, offset: offset - cursor };
+      }
+      cursor += length;
+    }
+    const node = nodes[nodes.length - 1];
+    return { node, offset: (node.textContent || '').length };
+  }
+
+  function findTextLatexMatches(root) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+    const groups = [];
+    let group = null;
+    let scope = null;
+    let node;
+    while ((node = walker.nextNode())) {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        if (textLatexBoundaryTags.has(node.tagName)) {
+          group = null;
+          scope = null;
+        }
+        continue;
+      }
+      if (!isTextLatexNode(node)) {
+        group = null;
+        scope = null;
+        continue;
+      }
+
+      const nodeScope = getTextLatexScope(node, root);
+      if (nodeScope !== scope) {
+        group = { nodes: [] };
+        groups.push(group);
+        scope = nodeScope;
+      }
+      group.nodes.push(node);
+    }
+
+    return groups.flatMap(({ nodes }) => {
+      const text = nodes.map((node) => node.textContent || '').join('');
+      const matches = [];
+      let match;
+      while ((match = textLatexPattern.exec(text))) {
+        if (match.index > 0 && text[match.index - 1] === '\\') continue;
+        matches.push({
+          start: resolveTextOffset(nodes, match.index, false),
+          end: resolveTextOffset(nodes, textLatexPattern.lastIndex, true),
+          latex: match[1] ?? match[2],
+          mode: match[1] !== undefined ? 'display' : 'inline',
+        });
+      }
+      textLatexPattern.lastIndex = 0;
+      return matches;
+    });
+  }
+
+  function containsTextLatex(root) {
+    return findTextLatexMatches(root).length > 0;
+  }
+
+  function createLatexMarker(latex, mode) {
+    const normalized = window.CopyLatex?.output?.normalizeLatexInput(latex, mode) || { tex: latex, mode };
+    const marker = document.createElement('span');
+    marker.className = 'latex-marker';
+    marker.textContent = normalized.tex;
+    marker.setAttribute('data-latex-mode', normalized.mode);
+    return marker;
+  }
+
+  function findOrphanKaTeXPart(part) {
+    const previous = part.previousElementSibling;
+    const next = part.nextElementSibling;
+    const expectedClass = part.classList.contains('katex-mathml')
+      ? 'katex-html'
+      : 'katex-mathml';
+    return [previous, next].find((sibling) => {
+      return (
+        sibling &&
+        !sibling.closest('.katex') &&
+        sibling.classList.contains(expectedClass)
+      );
+    }) || null;
+  }
+
+  function replaceOrphanKaTeXParts(root) {
+    const parts = Array.from(root.querySelectorAll('.katex-mathml, .katex-html')).filter((part) => {
+      return !part.closest('.katex');
+    });
+
+    parts.forEach((part) => {
+      if (!root.contains(part)) return;
+
+      const sibling = findOrphanKaTeXPart(part);
+      const sourcePart =
+        (part.classList.contains('katex-mathml') && part) ||
+        (sibling?.classList.contains('katex-mathml') && sibling);
+      const latex =
+        (sourcePart && extractLatexFromElement(sourcePart)) ||
+        extractLatexFromElement(part) ||
+        (sibling && extractLatexFromElement(sibling));
+      if (!latex) return;
+
+      const marker = createLatexMarker(latex, getDisplayMode(sourcePart || part));
+      if (sibling) sibling.remove();
+      part.replaceWith(marker);
+    });
+  }
+
+  function replaceTextLatexDelimiters(root) {
+    findTextLatexMatches(root).reverse().forEach(({ start, end, latex, mode }) => {
+      const range = document.createRange();
+      range.setStart(start.node, start.offset);
+      range.setEnd(end.node, end.offset);
+      range.deleteContents();
+      range.insertNode(createLatexMarker(latex, mode));
+    });
+  }
+
   // Convert HTML to Markdown
   function convertHtmlToLatexMarkdown(html) {
     const container = document.createElement('div');
@@ -31,11 +175,14 @@
     // without executing scripts or injecting external code.
     container.innerHTML = html;
 
+    replaceOrphanKaTeXParts(container);
+
     // 1) We detect all math elements
     const mathElements = [
       ...Array.from(container.querySelectorAll('.katex')),
       ...Array.from(container.querySelectorAll('[data-math]')),
       ...Array.from(container.querySelectorAll('mjx-container')),
+      ...Array.from(container.querySelectorAll('math')),
       ...Array.from(
         container.querySelectorAll(
           '.MathJax_Display, .MJXc-display, .MathJax, .mjx-chtml, .MathJax_CHTML, .MathJax_MathML'
@@ -54,24 +201,18 @@
       if (!latex) return;
 
       const displayMode = getDisplayMode(el);
-      const delimiter = displayMode === 'display' ? '$$' : '$';
 
-      // Create a marker that Turndown will preserve, containing the LaTeX code
-      const marker = document.createElement('span');
-      marker.className = 'latex-marker';
-      marker.textContent = latex;
-      marker.setAttribute('data-latex-mode', displayMode);
-
-      el.replaceWith(marker);
+      el.replaceWith(createLatexMarker(latex, displayMode));
     });
 
     // 2.1) Avoid selecting unicode fallbacks (we already have the LaTeX code)
     // In other works, don't select any element that may contain math/latex content
     container.querySelectorAll('script[type*="math/tex"]').forEach((script) => script.remove());
-    container.querySelectorAll('math, .katex-mathml').forEach((mathml) => mathml.remove());
+    container.querySelectorAll('.katex-mathml').forEach((mathml) => mathml.remove());
     container.querySelectorAll('annotation').forEach((ann) => ann.remove());
     container.querySelectorAll('.katex-html, .katex-fallback, mjx-assistive-mml').forEach((el) => el.remove());
     container.querySelectorAll('semantics').forEach((el) => el.remove());
+    replaceTextLatexDelimiters(container);
 
     // 3) Convert relative URLs to absolute
     container.querySelectorAll('a').forEach((link) => {
@@ -135,6 +276,9 @@
   // Extract LaTeX replicating the logic from detection.js
   // TODO One day: Unify this detection logic using the same as detection.js
   function extractLatexFromElement(el) {
+    const copiedLatex = el.getAttribute('data-copy-latex');
+    if (copiedLatex && copiedLatex.trim()) return copiedLatex.trim();
+
     // Wikipedia
     if (el.tagName === 'IMG' && el.classList.contains('mwe-math')) {
       const alt = el.getAttribute('alt');
@@ -155,13 +299,36 @@
         el.getAttribute('aria-label');
       if (dataLatex && dataLatex.trim()) return dataLatex.trim();
 
-      return extractRenderedKaTeXTex(el);
+      return window.CopyLatex?.renderedKaTeX?.extractRenderedKaTeXTex(el) || null;
+    }
+
+    if (el.classList.contains('katex-mathml')) {
+      const annotation = el.querySelector(
+        'annotation[encoding="application/x-tex"], annotation[encoding="application/x-latex"], annotation[encoding="application/tex"]'
+      );
+      return annotation?.textContent?.trim() || null;
+    }
+
+    if (el.classList.contains('katex-html')) {
+      return window.CopyLatex?.renderedKaTeX?.extractRenderedKaTeXTex(el) || null;
     }
 
     // Gemini (data-math attribute)
     if (el.hasAttribute('data-math')) {
       const dataMath = el.getAttribute('data-math');
       if (dataMath && dataMath.trim()) return dataMath.trim();
+    }
+
+    if (el.localName === 'math') {
+      const annotation = el.querySelector(
+        'annotation[encoding="application/x-tex"], annotation[encoding="application/x-latex"], annotation[encoding="application/tex"]'
+      );
+      const latex =
+        annotation?.textContent ||
+        el.getAttribute('alttext') ||
+        el.getAttribute('data-latex') ||
+        el.getAttribute('aria-label');
+      if (latex && latex.trim()) return latex.trim();
     }
 
     // MathJax v3/v4
@@ -196,63 +363,11 @@
     return null;
   }
 
-  function escapeLatexText(text) {
-    return text.replace(/[\\{}$&#_%]/g, (char) => `\\${char}`);
-  }
-
-  function normalizeLatexText(text) {
-    return text.replace(/\u200b/g, '').replace(/\s+/g, ' ').trim();
-  }
-
-  function extractRenderedKaTeXTex(katexEl) {
-    const html = katexEl.querySelector('.katex-html') || katexEl;
-    const tex = extractKaTeXChildren(html);
-    return normalizeLatexText(tex) || null;
-  }
-
-  function extractKaTeXChildren(el) {
-    let output = '';
-    for (const child of el.childNodes) {
-      if (child.nodeType === Node.TEXT_NODE) {
-        output += child.textContent || '';
-        continue;
-      }
-      if (!(child instanceof Element)) continue;
-      if (child.classList.contains('strut') || child.classList.contains('pstrut')) continue;
-
-      if (child.classList.contains('msupsub')) {
-        const script = extractKaTeXScript(child);
-        if (script) output += `^{${script}}`;
-        continue;
-      }
-
-      output += extractKaTeXElement(child);
-    }
-    return output;
-  }
-
-  function extractKaTeXScript(el) {
-    const sizing = el.querySelector('.sizing');
-    return sizing ? extractKaTeXChildren(sizing) : extractKaTeXChildren(el);
-  }
-
-  function extractKaTeXElement(el) {
-    if (el.classList.contains('mspace')) {
-      const margin = el.style?.marginRight || '';
-      if (margin.includes('2em')) return '\\quad ';
-      if (margin) return ' ';
-      return '';
-    }
-
-    if (el.classList.contains('mathbb')) return `\\mathbb{${extractKaTeXChildren(el)}}`;
-    if (el.classList.contains('text')) return `\\text{${escapeLatexText(el.textContent || '')}}`;
-    if (el.classList.contains('sqrt')) return `\\sqrt{${extractKaTeXChildren(el)}}`;
-
-    return extractKaTeXChildren(el);
-  }
-
   // Determine if math should be inline or display mode
   function getDisplayMode(el) {
+    const copiedMode = el.getAttribute('data-copy-latex-mode');
+    if (copiedMode === 'display' || copiedMode === 'inline') return copiedMode;
+
     // Wikipedia
     if (el.classList.contains('mwe-math-fallback-image-display')) return 'display';
 
@@ -266,12 +381,18 @@
       return 'display';
     }
 
-    // KaTeX: check for display class on parent
-    if (el.classList.contains('katex')) {
-      if (el.parentElement?.classList.contains('katex-display')) return 'display';
-      if (el.parentElement) {
-        const style = window.getComputedStyle(el.parentElement);
-        if (style.display === 'block' || style.display === 'flex' || style.textAlign === 'center') return 'display';
+    if (el.localName === 'math') {
+      if (el.getAttribute('display') === 'block') return 'display';
+      if (el.closest('.katex-display, .MathJax_Display, .MJXc-display')) return 'display';
+    }
+
+    if (
+      el.classList.contains('katex') ||
+      el.classList.contains('katex-mathml') ||
+      el.classList.contains('katex-html')
+    ) {
+      if (el.closest('.katex-display') || el.parentElement?.classList.contains('katex-display')) {
+        return 'display';
       }
     }
 
@@ -282,6 +403,26 @@
 
     return 'inline';
   }
+
+  function annotateMathForSelection(root = document) {
+    const mathElements = root.querySelectorAll(
+      '.katex, .katex-mathml, .katex-html, [data-math], mjx-container, math, ' +
+      '.MathJax_Display, .MJXc-display, .MathJax, .mjx-chtml, .MathJax_CHTML, .MathJax_MathML, ' +
+      'img.mwe-math, img.mwe-math-fallback-image-inline, img.mwe-math-fallback-image-display'
+    );
+
+    mathElements.forEach((el) => {
+      const latex = extractLatexFromElement(el);
+      if (!latex) return;
+
+      el.setAttribute('data-copy-latex', latex);
+      el.setAttribute('data-copy-latex-mode', getDisplayMode(el));
+    });
+  }
+
+  document.addEventListener('CopyLaTeX_HydrateMathJaxV3', () => {
+    annotateMathForSelection(document);
+  }, true);
 
   // Copy text to clipboard with fallback methods
   async function copyToClipboard(text) {
@@ -357,4 +498,5 @@
   // Expose only the single entrypoint
   globalThis.convertAndCopyHtml = convertAndCopyHtml;
   globalThis.convertHtmlToMarkdownText = convertHtmlToMarkdownText;
+  globalThis.containsTextLatex = containsTextLatex;
 })();
