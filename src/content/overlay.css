@@ -39,13 +39,24 @@
 	opacity: 0;
 	transform: translateY(-4px);
 	transition: opacity 0.15s ease-in-out, transform 0.15s ease-in-out;
-	pointer-events: auto;
+	pointer-events: none;
 	cursor: pointer;
 }
 
 .hoverlatex-overlay.visible {
 	opacity: 1;
 	transform: translateY(0);
+	pointer-events: auto;
+}
+
+.hoverlatex-overlay::before {
+	content: '';
+	position: absolute;
+	left: -8px;
+	right: -8px;
+	top: -8px;
+	bottom: -12px;
+	z-index: -1;
 }
 
 .hoverlatex-overlay img {
@@ -78,12 +89,16 @@ mjx-container.hoverlatex-hover {
 	cursor: pointer;
 }
 
-[data-math].hoverlatex-hover {
+[data-math].hoverlatex-hover,
+[data-tex].hoverlatex-hover,
+.ztext-math.hoverlatex-hover {
 	cursor: pointer;
 }
 
 .MathJax_Display.hoverlatex-hover,
+.MathJax_SVG_Display.hoverlatex-hover,
 .MathJax.hoverlatex-hover,
+.MathJax_SVG.hoverlatex-hover,
 .mjx-chtml.hoverlatex-hover,
 .MathJax_CHTML.hoverlatex-hover,
 .MJXc-display.hoverlatex-hover,

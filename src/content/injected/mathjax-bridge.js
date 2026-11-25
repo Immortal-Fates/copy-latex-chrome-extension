@@ -3,10 +3,17 @@
 // There is no other way to obtain the LaTeX code for MathJax v3 and v4.
 
 (function() {
-	var mathjax = window.MathJax;
-	var version = mathjax && mathjax.version ? mathjax.version : null;
-	if (!mathjax || !(version && (version.startsWith('3') || version.startsWith('4')))) {
-		return;
+	if (window.__copyLatexMathJaxBridgeInjected) return;
+	window.__copyLatexMathJaxBridgeInjected = true;
+
+	function markInjected() {
+		if (document.documentElement) {
+			document.documentElement.dataset.copyLatexMathjaxInjected = 'true';
+		}
+	}
+	markInjected();
+	if (!document.documentElement) {
+		document.addEventListener('DOMContentLoaded', markInjected, { once: true });
 	}
 
 	let nextContainerId = 1;
@@ -21,8 +28,15 @@
 	}
 
 	function getLatexForContainer(mjxContainer) {
-		if (typeof MathJax !== 'undefined' && MathJax.startup && MathJax.startup.document && MathJax.startup.document.math) {
-			let current = MathJax.startup.document.math.list;
+		const mathjax = window.MathJax;
+		if (!mathjax) return null;
+		const version = mathjax.version ? String(mathjax.version) : '';
+		if (version && !version.startsWith('3') && !version.startsWith('4')) {
+			return null;
+		}
+
+		if (mathjax.startup && mathjax.startup.document && mathjax.startup.document.math) {
+			let current = mathjax.startup.document.math.list;
 			const targetHTML = mjxContainer.innerHTML;
 			while (current && current.data) {
 				const mathItem = current.data;
@@ -35,7 +49,7 @@
 					}
 				}
 				current = current.next;
-				if (current === MathJax.startup.document.math.list) break;
+				if (current === mathjax.startup.document.math.list) break;
 			}
 		}
 		return null;
@@ -61,14 +75,14 @@
 	}, true);
 
 	document.addEventListener('mouseover', function(e) {
-		const mjx = e.target.closest('mjx-container');
+		const mjx = e.target?.closest?.('mjx-container');
 		if (mjx) {
 			publishLatexForContainer(mjx);
 		}
 	}, true);
 
 	document.addEventListener('click', function(e) {
-		const mjx = e.target.closest('mjx-container');
+		const mjx = e.target?.closest?.('mjx-container');
 		if (mjx) {
 			publishLatexForContainer(mjx);
 		}

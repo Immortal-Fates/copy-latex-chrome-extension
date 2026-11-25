@@ -18,6 +18,13 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
+      "js": ["content/injected/mathjax-bridge.js"],
+      "world": "MAIN",
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": ["<all_urls>"],
       "js": [
         "lib/polyfill/browser-polyfill.min.js",
         "content/utils/svg.js",

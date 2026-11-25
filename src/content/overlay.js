@@ -100,21 +100,30 @@
 	function showOverlay(target, tex, mode = 'inline') {
 		let overlay = getOverlay();
 		if (!overlay) {
-      // console.log('[Copy LaTeX] showOverlay: overlay does not exist, creating...');
-      overlay = createOverlay()
-    }  else {
-      // console.log('[Copy LaTeX] showOverlay: overlay exists, reusing. Classes:', overlay.className);
-    }
+			overlay = createOverlay();
+		}
 
 		// Ensure theme is applied synchronously to avoid flicker.
 		setOverlayThemeClass();
 		overlay.dataset.tex = tex;
 		overlay.dataset.mode = mode;
 
-		const rect = target.getBoundingClientRect();
-		const overlayWidth = overlay.offsetWidth;
-		const top = rect.top + window.scrollY - overlay.offsetHeight - 8;
-		const left = rect.left + window.scrollX + rect.width / 2 - overlayWidth / 2;
+		const rect = ns.detect?.getVisualBounds ? ns.detect.getVisualBounds(target) : target.getBoundingClientRect();
+		const overlayWidth = overlay.offsetWidth || 120;
+		const overlayHeight = overlay.offsetHeight || 28;
+
+		let top = rect.top + window.scrollY - overlayHeight - 6;
+		if (rect.top - overlayHeight - 6 < 0) {
+			top = rect.bottom + window.scrollY + 6;
+		}
+
+		let left = rect.left + window.scrollX + rect.width / 2 - overlayWidth / 2;
+		const minLeft = window.scrollX + 4;
+		const clientW = document.documentElement.clientWidth || window.innerWidth || 800;
+		const maxLeft = window.scrollX + clientW - overlayWidth - 4;
+		if (left < minLeft) left = minLeft;
+		if (left > maxLeft) left = Math.max(minLeft, maxLeft);
+
 		overlay.style.top = `${top}px`;
 		overlay.style.left = `${left}px`;
 		overlay.classList.add('visible');
